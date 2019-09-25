@@ -55,6 +55,19 @@ public:
 class RenameASTConsumer : public ASTConsumer {
 private:
     RenameVisitor *visitor; // doesn't have to be private
+
+    // Function to get the base name of the file provided by path
+    string basename(std::string path) {
+        return std::string( std::find_if(path.rbegin(), path.rend(), MatchPathSeparator()).base(), path.end());
+    }
+
+    // Used by std::find_if
+    struct MatchPathSeparator
+    {
+        bool operator()(char ch) const {
+            return ch == '/';
+        }
+    };
  
 public:
     explicit RenameASTConsumer(CompilerInstance *CI)
@@ -62,15 +75,22 @@ public:
         { }
  
     virtual void HandleTranslationUnit(ASTContext &Context) {
-        errs() << "##########################################\n";
-        errs() << "File before parsing\n";
-        rewriter.getEditBuffer(rewriter.getSourceMgr().getMainFileID()).write(errs());
-        errs() << "##########################################\nAnalyzing the file\n";
         visitor->TraverseDecl(Context.getTranslationUnitDecl());
-        errs() << "##########################################\n";
-        errs() << "File after parsing\n";
-        errs() << "##########################################\n";
-        rewriter.getEditBuffer(rewriter.getSourceMgr().getMainFileID()).write(errs());
+
+        // Create an output file to write the updated code
+        FileID id = rewriter.getSourceMgr().getMainFileID();
+        string filename = "/tmp/" + basename(rewriter.getSourceMgr().getFilename(rewriter.getSourceMgr().getLocForStartOfFile(id)).str());
+        std::error_code OutErrorInfo;
+        std::error_code ok;
+        llvm::raw_fd_ostream outFile(llvm::StringRef(filename),
+            OutErrorInfo, llvm::sys::fs::F_None);
+        if (OutErrorInfo == ok) {
+            const RewriteBuffer *RewriteBuf = rewriter.getRewriteBufferFor(id);
+            outFile << std::string(RewriteBuf->begin(), RewriteBuf->end());
+            errs() << "Output file created - " << filename << "\n";
+        } else {
+            llvm::errs() << "Could not create file\n";
+        }
     }
 };
 
